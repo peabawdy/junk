@@ -1,0 +1,89 @@
+Rebalance Strategy Contract Factory (RebalancerFactory) 
+Candidate: Technical Specification
+Overview
+The Rebalance Strategy Contract Factory is an upgradeable smart contract designed to enable users to create and manage their own instances of rebalance strategy contracts. The factory owner registers various pre-deployed implementations of rebalance strategies, known by their addresses and accompanied by human-readable descriptions. 
+Each implementation is linked to a Vault during deployment, which is validated by inspecting important parameters, checking consistency and consulting the Vault Factory contract for the Vault’s existence. 
+The Rebalance Strategy Factory is responsible for deploying instances using the OpenZeppelin Clone Proxy, recording the deployed instances, and maintaining a list of rebalance strategies linked to each Vault. The factory also acts as a registry for existing rebalance strategies manually deployed before the development of the factory which creates a comprehensive list of all rebalance strategy contracts and their relationships to the Vaults.
+Components
+2.0. Strategy Type
+A strategy type is defined by source code. All strategies of a certain type have identical source code. 
+Legacy strategy types are cataloged purely for the purpose of constructing an authoritative registry that can be used to validate addresses and determine properties of their expected behavior, parameters and ABI. They cannot be deployed by the Rebalancer factory. 
+Nouveau strategy types are crafted/written and deployed a certain way such that the factory can deploy new instances. There is no limit to the variety of nouveau strategy types that will be deployable by a single factory and the introduction of new, compatible strategy type does not imply any need to upgrade the factory to make their deployment possible. 
+The source code of existing strategies requires only minor modifications to create a nouveau strategy type that works similarly to the original and can be deployed by the factory. These should not share the same Type as the original code that was modified to create a compatible implementation. 
+2.1. Strategy Type Implementations
+Nouveau strategy types all have an Implementation that defines the bytecode to be used by an instance.They are used as templates for deployed instances. Deploying an “implementation” is a setup step to add a deployable type to the factory. 
+Legacy types have no “implementation” address because there is no authoritative copy of the bytecode for the type, only instances of contracts that were compiled from the same source code. 
+The source code for legacy types can be refactored to make a deployable version that uses the same rebalancing logic. This is mainly about small changes to the way the contract is initialized. As ever, changes to code create a different “type” to avoid confusion because “similar” isn’t good enough. 
+2.3. Strategy Instance:
+Instances of nouveau strategy types are created by the factory contract 
+Instances of legacy strategy types are simply cataloged, manually. Only the instance address and type is recorded.
+Each instance is known by its address and contains a type which is a hint about the expected properties and behavior of the contract at the instance address. 
+2.4. Vault Factory Contracts:
+This an existing ICHI Vaults factory contract as described in Appendix A
+Confirms vault existence. This works by establishing a hashed key for the vault instance using arguments that are discovered from the Vault specified by the user when the rebalance strategy is initialized. 
+2.5. Rebalance Strategy Factory:
+Upgradeable using OpenZeppelin TransparentUpgradeableProxy.
+Uses OpenZeppelin role-based access control, Access.sol, and separate roles for each state-changing function. 
+Validates the existence of vaults by consulting the Vault Factory contract for the existence of the hashed key derived from the parameters discovered in the Vault specified by the user that will be linked to the strategy instance. 
+Deploys instances of selected rebalance strategy types using the OpenZeppelin Clone Proxy.
+Initializes deployed contracts by calling the initialize() function and blindly (no validation) passing initData bytes arguments containing all parameters required by the function which is not necessarily consistent across implementations. 
+Coordinates transfer of ownership/role assignment of the deployed strategy away from the RebalancerFactory.
+Records the addresses of deployed instances.
+Maintains the registry:
+For each Type, the strategy instances of the type
+For each Vault, records the list of linked strategy instances.
+
+
+Features:
+3.1. Register Rebalance Strategy Type Implementations:
+The factory owner defines implementation types. Factory-deployed types have implementation addresses. Legacy types do not. All types have a human-readable description. This function is guarded by a unique role. 
+The factory owner can register pre-deployed rebalance strategy implementations by their address and type. This function is guarded by a unique role. 
+Additional information about each registered implementation includes an active/inactive flag. Deployment is not allowed for inactive implementations. Deactivating a rebalance strategy implementation has no effect on instances that are already deployed. 
+3.2. Deploy Rebalance Strategy Type Instance:
+Users can select and deploy rebalance strategy implementation identified by its type.
+Must be a nouveau strategy type with a deployed template, the implementation address. 
+Must not be a disabled type.
+The factory uses the OpenZeppelin Clone Proxy to deploy a new instance that mimics the code at the implementation address. 
+The user supplies the vault address to link the instance to, extra initialization parameters as an ABI-encoded bytes string, and an address to take ownership of the new instance. 
+The instance uses a common abstract inheritable contract that attends to common features and minimal functions (e.g. function initialize(args)) every deployable strategy will implement. This is how compatibility of the type templates and the factory is maintained, while allowing maximum flexibility at the type level. We simply ensure that the minimum viable compatibility is assured. The factory is agnostic about all other details. 
+3.3. Record Deployed Instances:
+The Rebalance Strategy Factory records the addresses of all deployed instances and their types.
+3.4. Maintain List of Rebalance Strategies:
+Maintains a list of all deployed instances and the vaults they link to.
+For each Vault, the Rebalance Strategy Factory maintains a list of linked rebalance strategies and their addresses.
+Implementations may be added or set to enabled/disabled (can/cannot be deployed), but they cannot be removed.
+Instances can be marked active/inactive to reflect their run state. This is manually maintained and is not confirmed by the factory. Generally, the state of a deployed strategy is an internal concern of the instance itself, and may even be implemented outside of the instance, such as by revoking permission in a Gnosis safe. 
+3.5. Register Existing Rebalance Strategies:
+The factory owner can input existing rebalance strategies, and their type, manually deployed before the development of the factory. This function is guarded by a specific role. 
+The factory acts as a registry for all existing rebalance strategies and classifies them by type which is a hint about what functions are available to inspect for more information.
+4. Workflow:
+4.1. Factory Owner:
+Creates a type for each pre-deployed nouveau rebalance strategy implementation, with a human-readable description and an implementation address. Should be set to active. These can be deployed by the factory. 
+Creates a type for each variation of legacy rebalancer contract source code, with a human-readable description. No implementation. Always set to inactive. Cannot be deployed by the factory. 
+Registers existing manually-deployed rebalance strategies by their instance address and type.  
+Assigns users to roles. Initially, the factory deployer will receive all roles. 
+4.2. User:
+Selects a desired rebalance strategy implementation by type.
+Encodes initialization parameters and provides this with the deployment transaction. 
+Specifies an owner that will receive the owner role for the deployed strategy using the Ownable pattern. 
+4.3. Rebalance Strategy Factory:
+Verifies the active status of the requested type.
+Deploys the rebalance strategy instance using the OpenZeppelin Clone Proxy.
+Initializes the strategy by passing initData to the instance’s initialize() function. 
+Assigns all roles to the specified account and renounces all roles. 
+Records the address of the deployed instance and the implementation it supports. 
+5. Factory Registry Storage Layout
+5.1 Strategy Types
+Searchable, append-only list of registered types:
+Implementation address (null if old style legacy deployment)
+Description
+Deployable (bool)
+Rebalancers: AddressSet of instances
+5.2 Strategies
+Searchable list of deployed instances:
+Instance type
+Instance Address
+Linked Vault
+Enabled (bool)
+5.3 Vaults
+Searchable list of deployed rebalancers joined to each Vault.
